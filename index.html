@@ -494,6 +494,67 @@
 
     
     <!--  -->
+    <!--  halamana presensi siswa tahap 6-->
+    
+<!-- HALAMAN PRESENSI GURU -->
+<section id="attendancePage" class="card hidden">
+  <h2>Presensi Siswa</h2>
+  <p>Isi presensi berdasarkan jadwal mengajar Anda.</p>
+
+  <label for="attendanceDate">Tanggal Presensi</label>
+  <input id="attendanceDate" type="date" required>
+
+  <label for="attendanceSchedule">Jadwal Mengajar</label>
+  <select id="attendanceSchedule" required>
+    <option value="">Pilih tanggal terlebih dahulu</option>
+  </select>
+
+  <button id="loadAttendanceButton" class="primary" type="button">
+    Tampilkan Siswa
+  </button>
+
+  <p id="attendanceInfo" role="status"></p>
+
+  <div id="attendanceControls" class="hidden">
+    <p>
+      Pilih status setiap siswa. Gunakan tombol Hadir Semua
+      jika seluruh siswa hadir.
+    </p>
+
+    <button id="allPresentButton" class="secondary" type="button">
+      Hadir Semua
+    </button>
+
+    <div style="overflow-x:auto;margin-top:12px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th>No.</th>
+            <th>NISN</th>
+            <th>Nama Siswa</th>
+            <th>Kelas</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="attendanceTableBody"></tbody>
+      </table>
+    </div>
+
+    <p id="attendanceSaveMessage" role="status"></p>
+
+    <button id="saveAttendanceButton" class="primary" type="button">
+      Simpan Presensi
+    </button>
+  </div>
+
+  <button id="backAttendanceDashboard" class="secondary"
+          type="button" style="margin-top:12px">
+    Kembali ke Dashboard
+  </button>
+</section>
+
+    
+    <!--  -->
     
 
     <!-- STATUS ERROR AKUN -->
@@ -529,6 +590,8 @@
   setDoc,
   deleteDoc,
   serverTimestamp,
+      query,
+      where,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
@@ -553,6 +616,7 @@
   "studentsPage",
   "usersPage",
   "schedulePage",
+  "attendancePage",
   "errorPage"
 ];
 
@@ -681,6 +745,18 @@ roleMenu.append(manageSchedulesButton);
           menuItem("Input Presensi", "Pilih jadwal mengajar dan catat kehadiran siswa."),
           menuItem("Riwayat Presensi", "Lihat dan koreksi presensi yang sudah disimpan.")
         );
+        //---tombol presensi siswa tahap 6
+        const attendanceButton = document.createElement("button");
+attendanceButton.className = "primary";
+attendanceButton.textContent = "Presensi Siswa";
+
+attendanceButton.addEventListener("click", async () => {
+  showPage("attendancePage");
+  await initializeAttendancePage();
+});
+
+roleMenu.append(attendanceButton);
+        //---
       } else {
         $("dashboardTitle").textContent = "Dashboard";
         roleMenu.append(
@@ -2153,6 +2229,465 @@ $("scheduleSearch").addEventListener(
 
 
     //-----
+
+    //fungsi presensi siswa tahap 6
+
+/* =====================================================
+   TAHAP 6 - PRESENSI GURU
+   SMAN 2 RANGKASBITUNG
+   ===================================================== */
+
+let attendanceSchedules = [];
+let selectedAttendanceSchedule = null;
+let attendanceStudents = [];
+
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function attendanceDayName(dateString) {
+  const date = new Date(`${dateString}T12:00:00`);
+  const days = [
+    "Minggu", "Senin", "Selasa", "Rabu",
+    "Kamis", "Jumat", "Sabtu"
+  ];
+  return days[date.getDay()];
+}
+
+function attendanceMessage(message) {
+  $("attendanceInfo").textContent = message;
+}
+
+function attendanceSaveMessage(message) {
+  $("attendanceSaveMessage").textContent = message;
+}
+
+function attendanceDocumentId(date, scheduleId, nisn) {
+  // ID deterministik: satu presensi per siswa per jadwal per tanggal.
+  return `${date}__${scheduleId}__${nisn}`;
+}
+
+async function verifyActiveTeacher() {
+  if (!auth.currentUser) {
+    throw new Error("Sesi login berakhir. Silakan login kembali.");
+  }
+
+  const profileSnapshot = await getDoc(
+    doc(db, "users", auth.currentUser.uid)
+  );
+
+  if (
+    !profileSnapshot.exists() ||
+    profileSnapshot.data().role !== "guru" ||
+    profileSnapshot.data().aktif !== true
+  ) {
+    throw new Error("Akses presensi hanya untuk guru aktif.");
+  }
+
+  return profileSnapshot.data();
+}
+
+async function initializeAttendancePage() {
+  $("attendanceDate").value = localDateString();
+  $("attendanceControls").classList.add("hidden");
+  $("attendanceTableBody").replaceChildren();
+  attendanceSaveMessage("");
+  attendanceMessage("Memuat jadwal mengajar...");
+
+  try {
+    await verifyActiveTeacher();
+    await loadTeacherAttendanceSchedules();
+  } catch (error) {
+    console.error("Inisialisasi presensi gagal:", error);
+    attendanceMessage(error.message || "Gagal memuat halaman presensi.");
+  }
+}
+
+async function loadTeacherAttendanceSchedules() {
+  const select = $("attendanceSchedule");
+  select.replaceChildren();
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Pilih jadwal";
+  select.appendChild(placeholder);
+
+  attendanceSchedules = [];
+  selectedAttendanceSchedule = null;
+
+  const teacherId = auth.currentUser.uid;
+
+  // Query hanya jadwal milik guru yang login.
+  const snapshot = await getDocs(
+    query(
+      collection(db, "jadwal"),
+      where("guruId", "==", teacherId)
+    )
+  );
+
+  attendanceSchedules = snapshot.docs
+    .map(item => ({ id: item.id, ...item.data() }))
+    .filter(item => item.aktif === true)
+    .sort((a, b) =>
+      Number(a.jamKe || 0) - Number(b.jamKe || 0)
+    );
+
+  updateAttendanceScheduleOptions();
+
+  if (attendanceSchedules.length === 0) {
+    attendanceMessage(
+      "Belum ada jadwal aktif untuk akun Anda. Hubungi admin."
+    );
+  } else {
+    attendanceMessage(
+      "Pilih tanggal dan jadwal untuk memuat daftar siswa."
+    );
+  }
+}
+
+function updateAttendanceScheduleOptions() {
+  const select = $("attendanceSchedule");
+  const previousValue = select.value;
+  const date = $("attendanceDate").value;
+  const day = date ? attendanceDayName(date) : "";
+
+  select.replaceChildren();
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = date
+    ? `Pilih jadwal hari ${day}`
+    : "Pilih tanggal terlebih dahulu";
+  select.appendChild(placeholder);
+
+  const daySchedules = attendanceSchedules.filter(
+    item => item.hari === day
+  );
+
+  for (const schedule of daySchedules) {
+    const option = document.createElement("option");
+    option.value = schedule.id;
+    option.textContent =
+      `${schedule.kelas} | Jam ${schedule.jamKe} | ` +
+      `${schedule.jamMulai}–${schedule.jamSelesai}`;
+    select.appendChild(option);
+  }
+
+  if (daySchedules.some(item => item.id === previousValue)) {
+    select.value = previousValue;
+  }
+
+  if (date && daySchedules.length === 0) {
+    attendanceMessage(
+      `Tidak ada jadwal aktif untuk hari ${day}.`
+    );
+  }
+}
+
+$("attendanceDate").addEventListener("change", () => {
+  updateAttendanceScheduleOptions();
+  $("attendanceControls").classList.add("hidden");
+  $("attendanceTableBody").replaceChildren();
+  attendanceSaveMessage("");
+});
+
+$("attendanceSchedule").addEventListener("change", () => {
+  $("attendanceControls").classList.add("hidden");
+  $("attendanceTableBody").replaceChildren();
+  attendanceSaveMessage("");
+});
+
+$("loadAttendanceButton").addEventListener("click", async () => {
+  const date = $("attendanceDate").value;
+  const scheduleId = $("attendanceSchedule").value;
+
+  if (!date || !scheduleId) {
+    attendanceMessage("Pilih tanggal dan jadwal terlebih dahulu.");
+    return;
+  }
+
+  try {
+    await verifyActiveTeacher();
+
+    const schedule = attendanceSchedules.find(
+      item => item.id === scheduleId
+    );
+
+    if (
+      !schedule ||
+      schedule.guruId !== auth.currentUser.uid ||
+      schedule.aktif !== true ||
+      schedule.hari !== attendanceDayName(date)
+    ) {
+      throw new Error("Jadwal tidak valid untuk tanggal ini.");
+    }
+
+    selectedAttendanceSchedule = schedule;
+    await loadStudentsForAttendance(date, schedule);
+  } catch (error) {
+    console.error("Gagal membuka presensi:", error);
+    attendanceMessage(error.message || "Gagal membuka presensi.");
+  }
+});
+
+async function loadStudentsForAttendance(date, schedule) {
+  attendanceMessage("Memuat siswa dan presensi sebelumnya...");
+  attendanceSaveMessage("");
+  $("attendanceControls").classList.add("hidden");
+  $("attendanceTableBody").replaceChildren();
+
+  const studentsSnapshot = await getDocs(collection(db, "siswa"));
+
+  attendanceStudents = studentsSnapshot.docs
+    .map(item => ({ id: item.id, ...item.data() }))
+    .filter(student =>
+      student.aktif !== false &&
+      String(student.kelas || "").trim().toLowerCase() ===
+        String(schedule.kelas || "").trim().toLowerCase()
+    )
+    .sort((a, b) =>
+      String(a.nama || "").localeCompare(String(b.nama || ""), "id")
+    );
+
+  if (attendanceStudents.length === 0) {
+    attendanceMessage(
+      `Tidak ditemukan siswa aktif di kelas ${schedule.kelas}. ` +
+      "Periksa kesesuaian nama kelas pada data siswa dan jadwal."
+    );
+    return;
+  }
+
+  // Rules presensi mengizinkan guru membaca dokumen miliknya.
+  // Filter tanggal dan jadwal dilakukan di browser.
+  const existingSnapshot = await getDocs(
+    query(
+      collection(db, "presensi"),
+      where("guruId", "==", auth.currentUser.uid)
+    )
+  );
+
+  const existingByStudent = new Map();
+
+  existingSnapshot.docs.forEach(item => {
+    const data = item.data();
+
+    if (
+      data.tanggal === date &&
+      data.jadwalId === schedule.id
+    ) {
+      existingByStudent.set(data.siswaId, data.status);
+    }
+  });
+
+  renderAttendanceStudents(existingByStudent);
+
+  $("attendanceControls").classList.remove("hidden");
+  attendanceMessage(
+    `${schedule.kelas} • ${attendanceDayName(date)}, ${date} • ` +
+    `Jam ke-${schedule.jamKe} • ${attendanceStudents.length} siswa.`
+  );
+}
+
+function renderAttendanceStudents(existingByStudent = new Map()) {
+  const body = $("attendanceTableBody");
+  body.replaceChildren();
+
+  const statuses = [
+    { value: "H", label: "Hadir" },
+    { value: "S", label: "Sakit" },
+    { value: "I", label: "Izin" },
+    { value: "A", label: "Alpa" }
+  ];
+
+  attendanceStudents.forEach((student, index) => {
+    const row = document.createElement("tr");
+
+    const values = [
+      String(index + 1),
+      String(student.nisn || student.id),
+      String(student.nama || "-"),
+      String(student.kelas || "-")
+    ];
+
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      cell.style.padding = "8px";
+      cell.style.borderBottom = "1px solid #e2e8f0";
+      row.appendChild(cell);
+    }
+
+    const statusCell = document.createElement("td");
+    statusCell.style.padding = "8px";
+    statusCell.style.borderBottom = "1px solid #e2e8f0";
+
+    const radioGroup = document.createElement("div");
+    radioGroup.style.display = "flex";
+    radioGroup.style.gap = "10px";
+    radioGroup.style.flexWrap = "wrap";
+
+    const savedStatus = existingByStudent.get(student.id);
+
+    statuses.forEach(status => {
+      const label = document.createElement("label");
+      label.style.display = "inline-flex";
+      label.style.alignItems = "center";
+      label.style.gap = "3px";
+
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `attendance_${index}`;
+      radio.value = status.value;
+      radio.checked = savedStatus === status.value;
+      radio.dataset.studentId = student.id;
+      radio.dataset.status = status.value;
+
+      label.append(radio, document.createTextNode(status.label));
+      radioGroup.appendChild(label);
+    });
+
+    statusCell.appendChild(radioGroup);
+    row.appendChild(statusCell);
+    body.appendChild(row);
+  });
+}
+
+$("allPresentButton").addEventListener("click", () => {
+  $("attendanceTableBody")
+    .querySelectorAll('input[type="radio"][value="H"]')
+    .forEach(radio => {
+      radio.checked = true;
+    });
+
+  attendanceSaveMessage(
+    "Semua siswa ditandai Hadir. Periksa kembali sebelum menyimpan."
+  );
+});
+
+$("saveAttendanceButton").addEventListener("click", async () => {
+  const button = $("saveAttendanceButton");
+  const date = $("attendanceDate").value;
+  const schedule = selectedAttendanceSchedule;
+
+  if (!date || !schedule) {
+    attendanceSaveMessage("Pilih tanggal dan jadwal terlebih dahulu.");
+    return;
+  }
+
+  const selectedStatuses = new Map();
+
+  $("attendanceTableBody")
+    .querySelectorAll('input[type="radio"]:checked')
+    .forEach(radio => {
+      selectedStatuses.set(
+        radio.dataset.studentId,
+        radio.value
+      );
+    });
+
+  const missing = attendanceStudents.filter(
+    student => !selectedStatuses.has(student.id)
+  );
+
+  if (missing.length > 0) {
+    attendanceSaveMessage(
+      `Masih ada ${missing.length} siswa yang belum diberi status.`
+    );
+    return;
+  }
+
+  if (!confirm(
+    `Simpan presensi ${schedule.kelas} tanggal ${date}?\n` +
+    "Jika sebelumnya sudah tersimpan, data pada sesi yang sama akan diperbarui."
+  )) return;
+
+  button.disabled = true;
+
+  try {
+    const teacher = await verifyActiveTeacher();
+
+    // Validasi ulang jadwal dari Firestore sebelum menulis.
+    const scheduleSnapshot = await getDoc(
+      doc(db, "jadwal", schedule.id)
+    );
+
+    if (
+      !scheduleSnapshot.exists() ||
+      scheduleSnapshot.data().guruId !== auth.currentUser.uid ||
+      scheduleSnapshot.data().aktif !== true ||
+      scheduleSnapshot.data().kelas !== schedule.kelas ||
+      scheduleSnapshot.data().hari !== attendanceDayName(date)
+    ) {
+      throw new Error("Jadwal sudah tidak aktif atau tidak valid.");
+    }
+
+    // Batch dibatasi maksimal 400 dokumen.
+    for (
+      let start = 0;
+      start < attendanceStudents.length;
+      start += 400
+    ) {
+      const chunk = attendanceStudents.slice(start, start + 400);
+      const batch = writeBatch(db);
+
+      for (const student of chunk) {
+        const nisn = String(student.nisn || student.id);
+        const documentId = attendanceDocumentId(
+          date,
+          schedule.id,
+          nisn
+        );
+
+        const ref = doc(db, "presensi", documentId);
+
+        batch.set(ref, {
+          tanggal: date,
+          siswaId: student.id,
+          namaSiswa: student.nama || "",
+          nisn,
+          kelas: schedule.kelas,
+          jadwalId: schedule.id,
+          guruId: auth.currentUser.uid,
+          guruNama: teacher.nama || "",
+          jamKe: schedule.jamKe,
+          jamMulai: schedule.jamMulai,
+          jamSelesai: schedule.jamSelesai,
+          status: selectedStatuses.get(student.id),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+
+      await batch.commit();
+    }
+
+    attendanceSaveMessage(
+      `Berhasil menyimpan presensi ${attendanceStudents.length} siswa.`
+    );
+    attendanceMessage(
+      `Presensi ${schedule.kelas} tanggal ${date} berhasil disimpan.`
+    );
+
+  } catch (error) {
+    console.error("Gagal menyimpan presensi:", error);
+    attendanceSaveMessage(
+      "Gagal menyimpan: " +
+      (error.message || "Periksa Firestore Rules.")
+    );
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("backAttendanceDashboard").addEventListener("click", () => {
+  $("attendanceControls").classList.add("hidden");
+  selectedAttendanceSchedule = null;
+  showPage("dashboardPage");
+});
+
+    //------
     
   </script>
 </body>
