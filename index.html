@@ -2769,53 +2769,55 @@ function renderAttendanceStudents(existingByStudent = new Map()) {
 
   attendanceStudents.forEach((student, index) => {
     const row = document.createElement("tr");
+    const studentId = student.id;
+    const savedStatus = existingByStudent.get(studentId);
 
-    const values = [
-      String(index + 1),
-      String(student.nisn || student.id),
-      String(student.nama || "-"),
-      String(student.kelas || "-")
-    ];
+    // Kolom nomor
+    const numberCell = document.createElement("td");
+    numberCell.className = "text-center";
+    numberCell.textContent = index + 1;
+    row.appendChild(numberCell);
 
-    for (const value of values) {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      cell.style.padding = "8px";
-      cell.style.borderBottom = "1px solid #e2e8f0";
-      row.appendChild(cell);
-    }
+    // Kolom nama siswa
+    const nameCell = document.createElement("td");
+    nameCell.className = "student-name-cell";
+    nameCell.textContent = student.nama || "-";
+    row.appendChild(nameCell);
 
-    const statusCell = document.createElement("td");
-    statusCell.style.padding = "8px";
-    statusCell.style.borderBottom = "1px solid #e2e8f0";
+    // Kolom NISN
+    const nisnCell = document.createElement("td");
+    nisnCell.className = "text-center";
+    nisnCell.textContent = student.nisn || student.id;
+    row.appendChild(nisnCell);
 
-    const radioGroup = document.createElement("div");
-    radioGroup.style.display = "flex";
-    radioGroup.style.gap = "10px";
-    radioGroup.style.flexWrap = "wrap";
-
-    const savedStatus = existingByStudent.get(student.id);
-
+    // Kolom Hadir, Sakit, Izin, Alpa
     statuses.forEach(status => {
-      const label = document.createElement("label");
-      label.style.display = "inline-flex";
-      label.style.alignItems = "center";
-      label.style.gap = "3px";
+      const cell = document.createElement("td");
+      cell.className = "text-center attendance-status-cell";
+
+      const wrapper = document.createElement("div");
+      wrapper.className =
+        "d-flex justify-content-center align-items-center";
 
       const radio = document.createElement("input");
       radio.type = "radio";
-      radio.name = `attendance_${index}`;
+      radio.className = "form-check-input attendance-radio";
+      radio.name = `attendance_${studentId}`;
       radio.value = status.value;
       radio.checked = savedStatus === status.value;
-      radio.dataset.studentId = student.id;
-      radio.dataset.status = status.value;
 
-      label.append(radio, document.createTextNode(status.label));
-      radioGroup.appendChild(label);
+      radio.dataset.studentId = studentId;
+      radio.dataset.status = status.value;
+      radio.setAttribute(
+        "aria-label",
+        `${student.nama || "Siswa"} - ${status.label}`
+      );
+
+      wrapper.appendChild(radio);
+      cell.appendChild(wrapper);
+      row.appendChild(cell);
     });
 
-    statusCell.appendChild(radioGroup);
-    row.appendChild(statusCell);
     body.appendChild(row);
   });
 }
