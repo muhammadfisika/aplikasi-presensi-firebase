@@ -367,6 +367,87 @@ button {
   }
 }
 
+
+    
+/* Tabel presensi siswa */
+.attendance-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.attendance-table {
+  width: 100%;
+  min-width: 650px;
+  margin-bottom: 0;
+  background: #fff;
+}
+
+.attendance-table th,
+.attendance-table td {
+  vertical-align: middle;
+  padding: 12px 10px;
+}
+
+.attendance-table th {
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.attendance-table td {
+  font-size: 14px;
+}
+
+.attendance-table .student-name-cell {
+  min-width: 180px;
+  font-weight: 500;
+}
+
+.attendance-table .attendance-status-cell {
+  width: 75px;
+  min-width: 65px;
+}
+
+.attendance-radio {
+  width: 22px;
+  height: 22px;
+  margin: 0 !important;
+  cursor: pointer;
+  float: none !important;
+}
+
+.attendance-radio:checked {
+  border-color: #0d6efd;
+  background-color: #0d6efd;
+}
+
+/* Efek saat baris dipilih */
+.attendance-table tbody tr:hover {
+  background-color: #f0f6ff;
+}
+
+/* Tampilan HP */
+@media (max-width: 576px) {
+  .attendance-table {
+    min-width: 620px;
+  }
+
+  .attendance-table th,
+  .attendance-table td {
+    padding: 10px 8px;
+    font-size: 13px;
+  }
+
+  .attendance-table .student-name-cell {
+    min-width: 150px;
+  }
+
+  .attendance-radio {
+    width: 23px;
+    height: 23px;
+  }
+}
+
   </style>
 </head>
 
@@ -784,24 +865,33 @@ button {
       Hadir Semua
     </button>
     
-<div class="table-responsive">
-  <table class="table table-bordered table-hover align-middle attendance-table">
-    <thead class="table-primary text-center">
-      <tr>
-        <th>No.</th>
-        <th class="text-start">Nama Siswa</th>
-        <th>Hadir</th>
-        <th>Sakit</th>
-        <th>Izin</th>
-        <th>Alpa</th>
-      </tr>
-    </thead>
 
-    <tbody id="attendanceTableBody">
-      <!-- Baris siswa dibuat oleh JavaScript -->
-    </tbody>
-  </table>
+<div class="card shadow-sm border-0">
+  <div class="card-header bg-primary text-white py-3">
+    <h5 class="mb-0">Daftar Presensi Siswa</h5>
+  </div>
+
+  <div class="card-body p-0">
+    <div class="table-responsive attendance-table-wrapper">
+      <table class="table table-bordered table-hover align-middle mb-0 attendance-table">
+        <thead class="table-primary text-center">
+          <tr>
+            <th>No.</th>
+            <th class="text-start">Nama Siswa</th>
+            <th>NISN</th>
+            <th>Hadir</th>
+            <th>Sakit</th>
+            <th>Izin</th>
+            <th>Alpa</th>
+          </tr>
+        </thead>
+
+        <tbody id="attendanceTableBody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
+
   
   </div>
 
