@@ -448,6 +448,25 @@
 <p id="scheduleImportMessage" role="status"></p>
 
   <!--  -->
+  <!--pencarian jadwal  -->
+
+<div style="margin-top:16px;margin-bottom:12px">
+  <label for="scheduleSearch">
+    Cari Jadwal Guru
+  </label>
+  <input
+    id="scheduleSearch"
+    type="search"
+    placeholder="Cari nama guru, hari, kelas, atau jam pelajaran..."
+    autocomplete="off"
+    style="width:100%;box-sizing:border-box"
+  >
+  <small id="scheduleSearchInfo">
+    Tampilkan semua jadwal.
+  </small>
+</div>
+
+  <!--  -->
   
 
   <div style="overflow-x:auto;margin-top:16px">
@@ -1668,6 +1687,10 @@ async function loadSchedules() {
   }
 }
 
+    //fungsi load pencarian
+filterScheduleTable();
+    //----
+
 // Simpan jadwal baru atau perubahan jadwal.
 $("scheduleForm").addEventListener("submit", async event => {
   event.preventDefault();
@@ -2069,7 +2092,67 @@ $("importScheduleButton").addEventListener("click", async () => {
 });
 
     //-----
+    //fungsi pencarian
     
+/* =====================================================
+   PENCARIAN JADWAL PADA DASHBOARD ADMIN
+   ===================================================== */
+
+function filterScheduleTable() {
+  const keyword = $("scheduleSearch").value
+    .trim()
+    .toLocaleLowerCase("id");
+
+  const body = $("scheduleTableBody");
+  const rows = Array.from(body.querySelectorAll("tr"));
+
+  let visibleCount = 0;
+  let dataRowCount = 0;
+
+  for (const row of rows) {
+    const cells = row.querySelectorAll("td");
+
+    // Lewati baris pesan, misalnya "Memuat jadwal..."
+    // atau "Belum ada jadwal mengajar".
+    if (cells.length !== 7) continue;
+
+    dataRowCount++;
+
+    const searchableText = [
+      cells[0].textContent, // Nama guru
+      cells[1].textContent, // Hari
+      cells[2].textContent, // Kelas
+      cells[3].textContent, // Jam ke
+      cells[4].textContent, // Jam mulai dan selesai
+      cells[5].textContent  // Status
+    ].join(" ").toLocaleLowerCase("id");
+
+    const matched = searchableText.includes(keyword);
+
+    row.style.display = matched ? "" : "none";
+
+    if (matched) visibleCount++;
+  }
+
+  if (dataRowCount === 0) {
+    $("scheduleSearchInfo").textContent =
+      "Belum ada data jadwal untuk dicari.";
+  } else if (keyword === "") {
+    $("scheduleSearchInfo").textContent =
+      `Menampilkan ${visibleCount} jadwal.`;
+  } else {
+    $("scheduleSearchInfo").textContent =
+      `Ditemukan ${visibleCount} dari ${dataRowCount} jadwal.`;
+  }
+}
+
+$("scheduleSearch").addEventListener(
+  "input",
+  filterScheduleTable
+);
+
+
+    //-----
     
   </script>
 </body>
