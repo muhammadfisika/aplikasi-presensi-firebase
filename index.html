@@ -776,8 +776,32 @@ $("importCsvButton").addEventListener("click", async () => {
   $("importStatus").textContent = "Membaca file CSV...";
 
   try {
-    const rows = parseCSV(await file.text());
+    //const rows = parseCSV(await file.text());
+     //diganti dengan :
+    
+const csvText = await file.text();
 
+// Deteksi pemisah CSV: koma atau titik koma.
+const firstLine = csvText
+  .replace(/^\uFEFF/, "")
+  .split(/\r?\n/)
+  .find(line => line.trim() !== "") || "";
+
+const commaCount = (firstLine.match(/,/g) || []).length;
+const semicolonCount = (firstLine.match(/;/g) || []).length;
+
+let rows;
+
+if (semicolonCount > commaCount) {
+  // Excel dengan pemisah titik koma.
+  rows = parseCSV(csvText.replace(/;/g, ","));
+} else {
+  rows = parseCSV(csvText);
+}
+
+
+
+    //-------
     if (rows.length < 2) {
       throw new Error("CSV tidak berisi data siswa.");
     }
