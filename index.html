@@ -1,0 +1,430 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#14532d">
+  <title>Presensi Siswa | SMAN 2 Rangkasbitung</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+
+    header {
+      background: #14532d;
+      color: white;
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    header h1 { margin: 0; font-size: 20px; }
+    header p { margin: 6px 0 0; font-size: 13px; }
+
+    main {
+      max-width: 850px;
+      margin: 30px auto;
+      padding: 0 16px;
+    }
+
+    .card {
+      background: white;
+      padding: 24px;
+      border-radius: 14px;
+      box-shadow: 0 4px 16px #0000000d;
+      margin-bottom: 18px;
+    }
+
+    h2 { margin-top: 0; }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin: 14px 0 6px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 11px 16px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    .primary { background: #166534; color: white; }
+    .secondary { background: #e2e8f0; color: #1e293b; }
+    .danger { background: #b91c1c; color: white; }
+
+    .full { width: 100%; margin-top: 18px; }
+    .hidden { display: none !important; }
+
+    .message {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fef3c7;
+      color: #92400e;
+      overflow-wrap: anywhere;
+    }
+
+    .menu {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .menu-item {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 18px;
+      background: #f8fafc;
+    }
+
+    .menu-item h3 { margin-top: 0; }
+    .muted { color: #64748b; line-height: 1.6; }
+    footer { text-align: center; padding: 24px; color: #64748b; font-size: 13px; }
+
+    @media (max-width: 480px) {
+      header h1 { font-size: 17px; }
+      .card { padding: 18px; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>Presensi Siswa</h1>
+      <p>SMAN 2 Rangkasbitung</p>
+    </div>
+    <div>
+      <button id="loginButton" class="secondary">Login</button>
+      <button id="logoutButton" class="danger hidden">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- HALAMAN PUBLIK -->
+    <section id="homePage" class="card">
+      <h2>Selamat Datang</h2>
+      <p class="muted">
+        Sistem informasi presensi siswa SMAN 2 Rangkasbitung.
+        Rekap kehadiran dan grafik presensi akan ditambahkan pada tahap
+        pengembangan berikutnya.
+      </p>
+      <p id="publicStatus" class="muted">
+        Anda sedang membuka halaman publik.
+      </p>
+      <button id="openLoginButton" class="primary">Login Pengguna</button>
+    </section>
+
+    <!-- HALAMAN LOGIN -->
+    <section id="loginPage" class="card hidden">
+      <h2>Login Pengguna</h2>
+      <p class="muted">
+        Masuk menggunakan email dan kata sandi yang telah didaftarkan
+        oleh administrator.
+      </p>
+
+      <form id="loginForm">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username"
+               placeholder="nama@sekolah.sch.id" required>
+
+        <label for="password">Kata sandi</label>
+        <input id="password" type="password"
+               autocomplete="current-password"
+               placeholder="Masukkan kata sandi" required>
+
+        <button id="submitLogin" type="submit" class="primary full">
+          Masuk
+        </button>
+      </form>
+
+      <div id="loginMessage" class="message hidden" role="status"></div>
+      <button id="backHomeButton" class="secondary full">
+        Kembali ke Halaman Awal
+      </button>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="dashboardPage" class="card hidden">
+      <h2 id="dashboardTitle">Dashboard</h2>
+      <p id="welcomeText" class="muted"></p>
+      <div id="roleMenu" class="menu"></div>
+      <p class="muted">
+        Menu pada tahap ini merupakan kerangka awal. Fungsinya akan
+        diaktifkan secara bertahap.
+      </p>
+    </section>
+
+    <!-- STATUS ERROR AKUN -->
+    <section id="errorPage" class="card hidden">
+      <h2>Akses belum tersedia</h2>
+      <p id="errorText" class="muted"></p>
+      <button id="retryButton" class="primary">Coba Lagi</button>
+    </section>
+  </main>
+
+  <footer>
+    SMAN 2 Rangkasbitung CERIA
+    (Cerdas, Empati, Religius, Inovatif, Aman dan nyaman)
+  </footer>
+
+  <script type="module">
+    import { initializeApp }
+      from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      onAuthStateChanged,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+
+    import {
+      getFirestore,
+      doc,
+      getDoc
+    } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+    // GANTI DENGAN KONFIGURASI DARI FIREBASE CONSOLE
+    const firebaseConfig = {
+      apiKey: "GANTI_DENGAN_API_KEY",
+      authDomain: "GANTI_DENGAN_PROJECT_ID.firebaseapp.com",
+      projectId: "GANTI_DENGAN_PROJECT_ID",
+      storageBucket: "GANTI_DENGAN_STORAGE_BUCKET",
+      messagingSenderId: "GANTI_DENGAN_MESSAGING_SENDER_ID",
+      appId: "GANTI_DENGAN_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const pages = [
+      "homePage", "loginPage", "dashboardPage", "errorPage"
+    ];
+
+    const $ = id => document.getElementById(id);
+
+    function showPage(pageId) {
+      pages.forEach(id => $(id).classList.add("hidden"));
+      $(pageId).classList.remove("hidden");
+    }
+
+    function showLoginMessage(message) {
+      $("loginMessage").textContent = message;
+      $("loginMessage").classList.remove("hidden");
+    }
+
+    function clearLoginMessage() {
+      $("loginMessage").textContent = "";
+      $("loginMessage").classList.add("hidden");
+    }
+
+    function friendlyAuthError(error) {
+      const messages = {
+        "auth/invalid-email": "Format email tidak valid.",
+        "auth/invalid-credential": "Email atau kata sandi salah.",
+        "auth/user-disabled": "Akun ini telah dinonaktifkan.",
+        "auth/too-many-requests":
+          "Terlalu banyak percobaan. Coba lagi nanti.",
+        "auth/network-request-failed":
+          "Koneksi internet bermasalah. Periksa jaringan Anda."
+      };
+
+      return messages[error.code] ||
+        "Login gagal. Periksa konfigurasi Firebase dan akun Anda.";
+    }
+
+    function menuItem(title, description) {
+      const card = document.createElement("div");
+      card.className = "menu-item";
+
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+
+      const paragraph = document.createElement("p");
+      paragraph.className = "muted";
+      paragraph.textContent = description;
+
+      card.append(heading, paragraph);
+      return card;
+    }
+
+    function renderDashboard(userData) {
+      const role = String(userData.role || "").toLowerCase();
+      const nama = userData.nama || auth.currentUser?.email || "Pengguna";
+
+      $("welcomeText").textContent =
+        `Halo, ${nama}. Peran akun: ${role}.`;
+
+      const roleMenu = $("roleMenu");
+      roleMenu.replaceChildren();
+
+      if (role === "admin") {
+        $("dashboardTitle").textContent = "Dashboard Admin";
+        roleMenu.append(
+          menuItem("Data Siswa", "Import dan kelola data siswa."),
+          menuItem("Data Pengguna", "Kelola akun guru dan kepala sekolah."),
+          menuItem("Jadwal Mengajar", "Atur jadwal guru, kelas, dan jam pelajaran.")
+        );
+      } else if (role === "kepsek") {
+        $("dashboardTitle").textContent = "Dashboard Kepala Sekolah";
+        roleMenu.append(
+          menuItem("Pemantauan Presensi", "Pantau pengisian presensi oleh guru."),
+          menuItem("Rekap Presensi", "Lihat rekap presensi berdasarkan tanggal dan kelas.")
+        );
+      } else if (role === "guru") {
+        $("dashboardTitle").textContent = "Dashboard Guru";
+        roleMenu.append(
+          menuItem("Input Presensi", "Pilih jadwal mengajar dan catat kehadiran siswa."),
+          menuItem("Riwayat Presensi", "Lihat dan koreksi presensi yang sudah disimpan.")
+        );
+      } else {
+        $("dashboardTitle").textContent = "Dashboard";
+        roleMenu.append(
+          menuItem("Peran tidak dikenal", "Hubungi administrator sekolah.")
+        );
+      }
+
+      showPage("dashboardPage");
+      $("loginButton").classList.add("hidden");
+      $("logoutButton").classList.remove("hidden");
+    }
+
+    async function loadUserProfile(user) {
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const snapshot = await getDoc(userRef);
+
+        if (!snapshot.exists()) {
+          await signOut(auth);
+          $("errorText").textContent =
+            "Profil pengguna tidak ditemukan di Firestore. " +
+            "Admin perlu membuat dokumen users dengan ID yang sama " +
+            "dengan UID akun Authentication.";
+          showPage("errorPage");
+          return;
+        }
+
+        const userData = snapshot.data();
+
+        if (userData.aktif !== true) {
+          await signOut(auth);
+          $("errorText").textContent =
+            "Akun tidak aktif. Hubungi administrator sekolah.";
+          showPage("errorPage");
+          return;
+        }
+
+        const allowedRoles = ["admin", "kepsek", "guru"];
+        const role = String(userData.role || "").toLowerCase();
+
+        if (!allowedRoles.includes(role)) {
+          await signOut(auth);
+          $("errorText").textContent =
+            "Peran akun tidak valid. Periksa field role di Firestore.";
+          showPage("errorPage");
+          return;
+        }
+
+        renderDashboard({ ...userData, role });
+      } catch (error) {
+        console.error("Gagal membaca profil:", error);
+        $("errorText").textContent =
+          "Profil tidak dapat dibaca. Periksa Firestore Rules, " +
+          "koneksi internet, dan konfigurasi Firebase.";
+        showPage("errorPage");
+      }
+    }
+
+    $("loginButton").addEventListener("click", () => {
+      clearLoginMessage();
+      showPage("loginPage");
+    });
+
+    $("openLoginButton").addEventListener("click", () => {
+      clearLoginMessage();
+      showPage("loginPage");
+    });
+
+    $("backHomeButton").addEventListener("click", () => {
+      showPage("homePage");
+    });
+
+    $("retryButton").addEventListener("click", () => {
+      if (auth.currentUser) {
+        loadUserProfile(auth.currentUser);
+      } else {
+        showPage("loginPage");
+      }
+    });
+
+    $("loginForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      clearLoginMessage();
+
+      const email = $("email").value.trim();
+      const password = $("password").value;
+      const button = $("submitLogin");
+
+      button.disabled = true;
+      button.textContent = "Memeriksa akun...";
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged akan memeriksa profil Firestore.
+      } catch (error) {
+        console.error("Login gagal:", error);
+        showLoginMessage(friendlyAuthError(error));
+      } finally {
+        button.disabled = false;
+        button.textContent = "Masuk";
+      }
+    });
+
+    $("logoutButton").addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.error("Logout gagal:", error);
+        alert("Logout gagal. Silakan coba lagi.");
+      }
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        $("loginButton").classList.add("hidden");
+        $("logoutButton").classList.remove("hidden");
+        loadUserProfile(user);
+      } else {
+        $("loginButton").classList.remove("hidden");
+        $("logoutButton").classList.add("hidden");
+        showPage("homePage");
+      }
+    });
+  </script>
+</body>
+</html>
