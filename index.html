@@ -783,21 +783,26 @@ button {
     <button id="allPresentButton" class="secondary" type="button">
       Hadir Semua
     </button>
+    
 <div class="table-responsive">
-    <div style="overflow-x:auto;margin-top:12px">
-      <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>NISN</th>
-            <th>Nama Siswa</th>
-            <th>Kelas</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="attendanceTableBody"></tbody>
-      </table>
-    </div>
+  <table class="table table-bordered table-hover align-middle attendance-table">
+    <thead class="table-primary text-center">
+      <tr>
+        <th>No.</th>
+        <th class="text-start">Nama Siswa</th>
+        <th>Hadir</th>
+        <th>Sakit</th>
+        <th>Izin</th>
+        <th>Alpa</th>
+      </tr>
+    </thead>
+
+    <tbody id="attendanceTableBody">
+      <!-- Baris siswa dibuat oleh JavaScript -->
+    </tbody>
+  </table>
+</div>
+  
   </div>
 
     <p id="attendanceSaveMessage" role="status"></p>
