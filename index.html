@@ -252,7 +252,115 @@
 
 
      <!--  -->
+   <!--Tambahkan halaman formulir manajemen pengguna
+
     
+<!-- HALAMAN KELOLA PENGGUNA -->
+<section id="usersPage" class="card hidden">
+  <h2>Manajemen Akun Guru dan Kepala Sekolah</h2>
+  <p class="muted">
+    Kelola profil guru dan kepala sekolah yang akun Authentication-nya
+    sudah dibuat di Firebase Console.
+  </p>
+
+  <button id="backUsersDashboard" class="secondary" type="button">
+    Kembali ke Dashboard
+  </button>
+
+  <hr>
+
+  <h3>Formulir Profil Pengguna</h3>
+  <form id="managedUserForm">
+    <label for="managedUid">UID Firebase Authentication</label>
+    <input
+      id="managedUid"
+      type="text"
+      placeholder="Tempel UID dari Firebase Console"
+      required
+    >
+
+    <label for="managedName">Nama lengkap</label>
+    <input
+      id="managedName"
+      type="text"
+      placeholder="Nama guru atau kepala sekolah"
+      required
+    >
+
+    <label for="managedNip">NIP</label>
+    <input
+      id="managedNip"
+      type="text"
+      placeholder="Masukkan NIP"
+      required
+    >
+
+    <label for="managedEmail">Email akun</label>
+    <input
+      id="managedEmail"
+      type="email"
+      placeholder="nama@sekolah.sch.id"
+      required
+    >
+
+    <label for="managedRole">Peran pengguna</label>
+    <select id="managedRole" required>
+      <option value="guru">Guru</option>
+      <option value="kepsek">Kepala Sekolah</option>
+    </select>
+
+    <button
+      id="createManagedUserButton"
+      class="primary full"
+      type="submit"
+    >
+      Simpan Profil
+    </button>
+
+    <button
+      id="cancelManagedUserEdit"
+      class="secondary full hidden"
+      type="button"
+    >
+      Batal Edit
+    </button>
+  </form>
+
+  <p id="managedUserMessage" class="muted" role="status"></p>
+
+  <hr>
+
+  <h3>Daftar Pengguna</h3>
+  <button id="refreshManagedUsers" class="secondary" type="button">
+    Muat Ulang Daftar
+  </button>
+
+  <div style="overflow-x:auto; margin-top:12px">
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px">Nama</th>
+          <th style="text-align:left;padding:8px">NIP</th>
+          <th style="text-align:left;padding:8px">Email</th>
+          <th style="text-align:left;padding:8px">Peran</th>
+          <th style="text-align:left;padding:8px">Status</th>
+          <th style="text-align:left;padding:8px">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="managedUsersTableBody">
+        <tr>
+          <td colspan="6" style="padding:8px">
+            Klik Muat Ulang Daftar untuk membaca data.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+    
+    ==========
 
     <!-- STATUS ERROR AKUN -->
     <section id="errorPage" class="card hidden">
@@ -309,6 +417,7 @@
   "loginPage",
   "dashboardPage",
   "studentsPage",
+  "usersPage",
   "errorPage"
 ];
 
@@ -392,6 +501,23 @@
 roleMenu.append(manageStudentsButton);
 
           //------------
+
+        //Penambahan tombol kelola User
+        
+const manageUsersButton = document.createElement("button");
+manageUsersButton.className = "primary";
+manageUsersButton.textContent = "Kelola Pengguna";
+
+manageUsersButton.addEventListener("click", async () => {
+  showPage("usersPage");
+  await loadManagedUsers();
+});
+
+roleMenu.append(manageUsersButton);
+
+
+
+        //--------
 
         
       } else if (role === "kepsek") {
@@ -882,6 +1008,296 @@ if (semicolonCount > commaCount) {
 
     
     //---------------------------
+
+//Pengelola Profil tahap 5
+
+    
+ // =====================================================
+ // MANAJEMEN PROFIL GURU DAN KEPALA SEKOLAH
+ // =====================================================
+
+let editingManagedUid = null;
+
+function showManagedUserMessage(message) {
+  $("managedUserMessage").textContent = message;
+}
+
+function resetManagedUserForm() {
+  editingManagedUid = null;
+  $("managedUserForm").reset();
+  $("managedUid").disabled = false;
+  $("createManagedUserButton").textContent = "Simpan Profil";
+  $("cancelManagedUserEdit").classList.add("hidden");
+}
+
+$("backUsersDashboard").addEventListener("click", () => {
+  resetManagedUserForm();
+  showPage("dashboardPage");
+});
+
+$("cancelManagedUserEdit").addEventListener("click", () => {
+  resetManagedUserForm();
+  showManagedUserMessage("Edit dibatalkan.");
+});
+
+$("refreshManagedUsers").addEventListener("click", loadManagedUsers);
+
+async function loadManagedUsers() {
+  const body = $("managedUsersTableBody");
+  body.replaceChildren();
+
+  const loadingRow = document.createElement("tr");
+  const loadingCell = document.createElement("td");
+  loadingCell.colSpan = 6;
+  loadingCell.textContent = "Memuat data pengguna...";
+  loadingCell.style.padding = "8px";
+  loadingRow.appendChild(loadingCell);
+  body.appendChild(loadingRow);
+
+  try {
+    if (!auth.currentUser) {
+      throw new Error("Silakan login sebagai admin.");
+    }
+
+    const currentProfile = await getDoc(
+      doc(db, "users", auth.currentUser.uid)
+    );
+
+    if (
+      !currentProfile.exists() ||
+      currentProfile.data().role !== "admin" ||
+      currentProfile.data().aktif !== true
+    ) {
+      throw new Error("Hanya admin aktif yang boleh mengelola pengguna.");
+    }
+
+    const snapshot = await getDocs(collection(db, "users"));
+
+    const users = snapshot.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .filter(item => ["guru", "kepsek"].includes(item.role))
+      .sort((a, b) =>
+        String(a.nama || "").localeCompare(
+          String(b.nama || ""), "id"
+        )
+      );
+
+    body.replaceChildren();
+
+    if (users.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6;
+      td.textContent = "Belum ada profil guru atau kepala sekolah.";
+      td.style.padding = "8px";
+      tr.appendChild(td);
+      body.appendChild(tr);
+      return;
+    }
+
+    for (const user of users) {
+      const tr = document.createElement("tr");
+
+      const values = [
+        user.nama || "-",
+        user.nip || "-",
+        user.email || "-",
+        user.role === "kepsek" ? "Kepala Sekolah" : "Guru",
+        user.aktif === true ? "Aktif" : "Nonaktif"
+      ];
+
+      for (const value of values) {
+        const td = document.createElement("td");
+        td.textContent = value;
+        td.style.padding = "8px";
+        td.style.borderBottom = "1px solid #e2e8f0";
+        tr.appendChild(td);
+      }
+
+      const actionCell = document.createElement("td");
+      actionCell.style.padding = "8px";
+      actionCell.style.borderBottom = "1px solid #e2e8f0";
+
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "secondary";
+      editButton.textContent = "Edit";
+      editButton.style.margin = "3px";
+
+      editButton.addEventListener("click", () => {
+        editingManagedUid = user.id;
+
+        $("managedUid").value = user.id;
+        $("managedName").value = user.nama || "";
+        $("managedNip").value = user.nip || "";
+        $("managedEmail").value = user.email || "";
+        $("managedRole").value = user.role;
+
+        $("managedUid").disabled = true;
+        $("createManagedUserButton").textContent = "Simpan Perubahan";
+        $("cancelManagedUserEdit").classList.remove("hidden");
+
+        showManagedUserMessage(
+          "Mode edit. UID tidak dapat diubah."
+        );
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+
+      const statusButton = document.createElement("button");
+      statusButton.type = "button";
+      statusButton.className =
+        user.aktif === true ? "danger" : "primary";
+      statusButton.textContent =
+        user.aktif === true ? "Nonaktifkan" : "Aktifkan";
+      statusButton.style.margin = "3px";
+
+      statusButton.addEventListener("click", async () => {
+        const newStatus = user.aktif !== true;
+        const action = newStatus ? "mengaktifkan" : "menonaktifkan";
+
+        if (!confirm(`${action} akun ${user.nama || user.email}?`)) {
+          return;
+        }
+
+        try {
+          await setDoc(
+            doc(db, "users", user.id),
+            {
+              nama: user.nama || "",
+              nip: user.nip || "",
+              email: user.email || "",
+              role: user.role,
+              aktif: newStatus
+            },
+            { merge: true }
+          );
+
+          showManagedUserMessage(
+            `Profil ${user.nama || user.email} berhasil ${
+              newStatus ? "diaktifkan" : "dinonaktifkan"
+            }.`
+          );
+
+          await loadManagedUsers();
+        } catch (error) {
+          console.error("Gagal mengubah status pengguna:", error);
+          showManagedUserMessage(
+            "Gagal mengubah status. Periksa Firestore Rules."
+          );
+        }
+      });
+
+      actionCell.append(editButton, statusButton);
+      tr.appendChild(actionCell);
+      body.appendChild(tr);
+    }
+
+  } catch (error) {
+    console.error("Gagal memuat pengguna:", error);
+    body.replaceChildren();
+
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.textContent = error.message ||
+      "Data pengguna gagal dimuat. Periksa Firestore Rules.";
+    td.style.padding = "8px";
+    tr.appendChild(td);
+    body.appendChild(tr);
+
+    showManagedUserMessage(error.message || "Gagal memuat pengguna.");
+  }
+}
+
+$("managedUserForm").addEventListener("submit", async event => {
+  event.preventDefault();
+
+  const uid = $("managedUid").value.trim();
+  const nama = $("managedName").value.trim();
+  const nip = $("managedNip").value.trim();
+  const email = $("managedEmail").value.trim();
+  const role = $("managedRole").value;
+
+  if (!uid || !nama || !nip || !email) {
+    showManagedUserMessage("Semua kolom wajib diisi.");
+    return;
+  }
+
+  if (!["guru", "kepsek"].includes(role)) {
+    showManagedUserMessage("Peran pengguna tidak valid.");
+    return;
+  }
+
+  const button = $("createManagedUserButton");
+  button.disabled = true;
+  showManagedUserMessage("Menyimpan profil...");
+
+  try {
+    if (!auth.currentUser) {
+      throw new Error("Sesi login berakhir. Silakan login kembali.");
+    }
+
+    const adminSnapshot = await getDoc(
+      doc(db, "users", auth.currentUser.uid)
+    );
+
+    if (
+      !adminSnapshot.exists() ||
+      adminSnapshot.data().role !== "admin" ||
+      adminSnapshot.data().aktif !== true
+    ) {
+      throw new Error("Hanya admin aktif yang boleh mengelola profil.");
+    }
+
+    const userRef = doc(db, "users", uid);
+    const existing = await getDoc(userRef);
+
+    if (existing.exists() && existing.data().role === "admin") {
+      throw new Error("Profil admin tidak dapat diubah dari halaman ini.");
+    }
+
+    if (editingManagedUid && editingManagedUid !== uid) {
+      throw new Error("UID tidak boleh diubah saat mengedit profil.");
+    }
+
+    const payload = {
+      nama,
+      nip,
+      email,
+      role,
+      aktif: existing.exists()
+        ? existing.data().aktif === true
+        : true
+    };
+
+    if (!existing.exists()) {
+      payload.createdAt = serverTimestamp();
+    }
+
+    await setDoc(userRef, payload, { merge: true });
+
+    resetManagedUserForm();
+    showManagedUserMessage(
+      "Profil berhasil disimpan. Pastikan UID cocok dengan akun Authentication."
+    );
+
+    await loadManagedUsers();
+
+  } catch (error) {
+    console.error("Gagal menyimpan profil pengguna:", error);
+    showManagedUserMessage(
+      error.message || "Gagal menyimpan profil. Periksa Firestore Rules."
+    );
+  } finally {
+    button.disabled = false;
+  }
+});
+
+
+
+    //-----
+    
   </script>
 </body>
 </html>
