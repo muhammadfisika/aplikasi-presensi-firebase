@@ -414,6 +414,120 @@ roleMenu.append(manageStudentsButton);
       $("logoutButton").classList.remove("hidden");
     }
 
+    
+
+    async function loadUserProfile(user) {
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const snapshot = await getDoc(userRef);
+
+        if (!snapshot.exists()) {
+          await signOut(auth);
+          $("errorText").textContent =
+            "Profil pengguna tidak ditemukan di Firestore. " +
+            "Admin perlu membuat dokumen users dengan ID yang sama " +
+            "dengan UID akun Authentication.";
+          showPage("errorPage");
+          return;
+        }
+
+        const userData = snapshot.data();
+
+        if (userData.aktif !== true) {
+          await signOut(auth);
+          $("errorText").textContent =
+            "Akun tidak aktif. Hubungi administrator sekolah.";
+          showPage("errorPage");
+          return;
+        }
+
+        const allowedRoles = ["admin", "kepsek", "guru"];
+        const role = String(userData.role || "").toLowerCase();
+
+        if (!allowedRoles.includes(role)) {
+          await signOut(auth);
+          $("errorText").textContent =
+            "Peran akun tidak valid. Periksa field role di Firestore.";
+          showPage("errorPage");
+          return;
+        }
+
+        renderDashboard({ ...userData, role });
+      } catch (error) {
+        console.error("Gagal membaca profil:", error);
+        $("errorText").textContent =
+          "Profil tidak dapat dibaca. Periksa Firestore Rules, " +
+          "koneksi internet, dan konfigurasi Firebase.";
+        showPage("errorPage");
+      }
+    }
+
+    $("loginButton").addEventListener("click", () => {
+      clearLoginMessage();
+      showPage("loginPage");
+    });
+
+    $("openLoginButton").addEventListener("click", () => {
+      clearLoginMessage();
+      showPage("loginPage");
+    });
+
+    $("backHomeButton").addEventListener("click", () => {
+      showPage("homePage");
+    });
+
+    $("retryButton").addEventListener("click", () => {
+      if (auth.currentUser) {
+        loadUserProfile(auth.currentUser);
+      } else {
+        showPage("loginPage");
+      }
+    });
+
+    $("loginForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      clearLoginMessage();
+
+      const email = $("email").value.trim();
+      const password = $("password").value;
+      const button = $("submitLogin");
+
+      button.disabled = true;
+      button.textContent = "Memeriksa akun...";
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged akan memeriksa profil Firestore.
+      } catch (error) {
+        console.error("Login gagal:", error);
+        showLoginMessage(friendlyAuthError(error));
+      } finally {
+        button.disabled = false;
+        button.textContent = "Masuk";
+      }
+    });
+
+    $("logoutButton").addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.error("Logout gagal:", error);
+        alert("Logout gagal. Silakan coba lagi.");
+      }
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        $("loginButton").classList.add("hidden");
+        $("logoutButton").classList.remove("hidden");
+        loadUserProfile(user);
+      } else {
+        $("loginButton").classList.remove("hidden");
+        $("logoutButton").classList.add("hidden");
+        showPage("homePage");
+      }
+    });
+
     //logika CRUD dan import CSV
     
 let studentsCache = [];
@@ -740,118 +854,6 @@ $("importCsvButton").addEventListener("click", async () => {
 
     
     //---------------------------
-
-    async function loadUserProfile(user) {
-      try {
-        const userRef = doc(db, "users", user.uid);
-        const snapshot = await getDoc(userRef);
-
-        if (!snapshot.exists()) {
-          await signOut(auth);
-          $("errorText").textContent =
-            "Profil pengguna tidak ditemukan di Firestore. " +
-            "Admin perlu membuat dokumen users dengan ID yang sama " +
-            "dengan UID akun Authentication.";
-          showPage("errorPage");
-          return;
-        }
-
-        const userData = snapshot.data();
-
-        if (userData.aktif !== true) {
-          await signOut(auth);
-          $("errorText").textContent =
-            "Akun tidak aktif. Hubungi administrator sekolah.";
-          showPage("errorPage");
-          return;
-        }
-
-        const allowedRoles = ["admin", "kepsek", "guru"];
-        const role = String(userData.role || "").toLowerCase();
-
-        if (!allowedRoles.includes(role)) {
-          await signOut(auth);
-          $("errorText").textContent =
-            "Peran akun tidak valid. Periksa field role di Firestore.";
-          showPage("errorPage");
-          return;
-        }
-
-        renderDashboard({ ...userData, role });
-      } catch (error) {
-        console.error("Gagal membaca profil:", error);
-        $("errorText").textContent =
-          "Profil tidak dapat dibaca. Periksa Firestore Rules, " +
-          "koneksi internet, dan konfigurasi Firebase.";
-        showPage("errorPage");
-      }
-    }
-
-    $("loginButton").addEventListener("click", () => {
-      clearLoginMessage();
-      showPage("loginPage");
-    });
-
-    $("openLoginButton").addEventListener("click", () => {
-      clearLoginMessage();
-      showPage("loginPage");
-    });
-
-    $("backHomeButton").addEventListener("click", () => {
-      showPage("homePage");
-    });
-
-    $("retryButton").addEventListener("click", () => {
-      if (auth.currentUser) {
-        loadUserProfile(auth.currentUser);
-      } else {
-        showPage("loginPage");
-      }
-    });
-
-    $("loginForm").addEventListener("submit", async event => {
-      event.preventDefault();
-      clearLoginMessage();
-
-      const email = $("email").value.trim();
-      const password = $("password").value;
-      const button = $("submitLogin");
-
-      button.disabled = true;
-      button.textContent = "Memeriksa akun...";
-
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-        // onAuthStateChanged akan memeriksa profil Firestore.
-      } catch (error) {
-        console.error("Login gagal:", error);
-        showLoginMessage(friendlyAuthError(error));
-      } finally {
-        button.disabled = false;
-        button.textContent = "Masuk";
-      }
-    });
-
-    $("logoutButton").addEventListener("click", async () => {
-      try {
-        await signOut(auth);
-      } catch (error) {
-        console.error("Logout gagal:", error);
-        alert("Logout gagal. Silakan coba lagi.");
-      }
-    });
-
-    onAuthStateChanged(auth, user => {
-      if (user) {
-        $("loginButton").classList.add("hidden");
-        $("logoutButton").classList.remove("hidden");
-        loadUserProfile(user);
-      } else {
-        $("loginButton").classList.remove("hidden");
-        $("logoutButton").classList.add("hidden");
-        showPage("homePage");
-      }
-    });
   </script>
 </body>
 </html>
