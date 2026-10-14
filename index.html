@@ -421,6 +421,34 @@
       Kembali ke Dashboard
     </button>
   </div>
+<!-- Penambahan blok Import Data Jadwal -->
+
+<hr>
+<h3>Import Jadwal Mengajar dari CSV</h3>
+<p>
+  Pilih file CSV dengan kolom guruId, hari, kelas, jamKe,
+  jamMulai, dan jamSelesai.
+</p>
+
+<input
+  id="scheduleCsvFile"
+  type="file"
+  accept=".csv,text/csv"
+>
+
+<button
+  id="importScheduleButton"
+  class="primary"
+  type="button"
+  style="margin-top:10px"
+>
+  Import Jadwal CSV
+</button>
+
+<p id="scheduleImportMessage" role="status"></p>
+
+  <!--  -->
+  
 
   <div style="overflow-x:auto;margin-top:16px">
     <table style="width:100%;border-collapse:collapse">
@@ -1746,6 +1774,301 @@ $("backScheduleDashboard").addEventListener("click", () => {
 
 
     //-------
+
+    //Penambahan kode import data jadwal
+
+/* =====================================================
+   IMPORT JADWAL GURU DARI CSV
+   ===================================================== */
+
+function parseScheduleCSV(text) {
+  // Membaca CSV dengan koma atau titik koma,
+  // termasuk nilai yang berada di dalam tanda kutip.
+  const firstLine = text.split(/\r?\n/)[0] || "";
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ";" : ",";
+
+  const rows = [];
+  let row = [];
+  let value = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '"') {
+      if (quoted && text[i + 1] === '"') {
+        value += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === delimiter && !quoted) {
+      row.push(value.trim());
+      value = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[i + 1] === "\n") i++;
+      row.push(value.trim());
+
+      if (row.some(cell => cell !== "")) rows.push(row);
+
+      row = [];
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+
+  row.push(value.trim());
+  if (row.some(cell => cell !== "")) rows.push(row);
+
+  if (rows.length < 2) {
+    throw new Error("File CSV tidak memiliki data jadwal.");
+  }
+
+  const headers = rows[0].map(header =>
+    header.replace(/^\uFEFF/, "").trim().toLowerCase()
+  );
+
+  const required = [
+    "guruId", "hari", "kelas", "jamKe",
+    "jamMulai", "jamSelesai"
+  ];
+
+  // Nama header tidak peka huruf besar/kecil.
+  const indexes = {};
+  headers.forEach((header, index) => {
+    indexes[header] = index;
+  });
+
+  const missing = required.filter(
+    header => indexes[header.toLowerCase()] === undefined
+  );
+
+  if (missing.length) {
+    throw new Error(
+      "Kolom CSV tidak ditemukan: " + missing.join(", ")
+    );
+  }
+
+  return rows.slice(1).map((cells, index) => {
+    const result = {};
+    for (const header of required) {
+      result[header] = String(
+        cells[indexes[header.toLowerCase()]] ?? ""
+      ).trim();
+    }
+    result._baris = index + 2;
+    return result;
+  });
+}
+
+$("importScheduleButton").addEventListener("click", async () => {
+  const file = $("scheduleCsvFile").files[0];
+  const message = $("scheduleImportMessage");
+  const button = $("importScheduleButton");
+
+  if (!file) {
+    message.textContent = "Pilih file CSV terlebih dahulu.";
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "Memeriksa file dan data guru...";
+
+  try {
+    await verifyActiveAdmin();
+
+    const csvText = await file.text();
+    const rows = parseScheduleCSV(csvText);
+
+    // Ambil profil guru yang terdaftar di Firestore.
+    const usersSnapshot = await getDocs(collection(db, "users"));
+    const teachers = new Map();
+
+    usersSnapshot.docs.forEach(item => {
+      const data = item.data();
+      if (data.role === "guru" && data.aktif === true) {
+        teachers.set(item.id, data);
+      }
+    });
+
+    // Ambil jadwal lama supaya import ulang tidak membuat
+    // duplikat untuk guru, hari, kelas, dan jam pelajaran yang sama.
+    const schedulesSnapshot = await getDocs(collection(db, "jadwal"));
+    const existing = new Map();
+
+    for (const item of schedulesSnapshot.docs) {
+      const data = item.data();
+      const key = [
+        data.guruId,
+        String(data.hari || "").toLowerCase(),
+        String(data.kelas || "").trim().toLowerCase(),
+        Number(data.jamKe)
+      ].join("|");
+
+      if (!existing.has(key)) {
+        existing.set(key, item.id);
+      }
+    }
+
+    const allowedDays = [
+      "Senin", "Selasa", "Rabu",
+      "Kamis", "Jumat", "Sabtu"
+    ];
+
+    const normalizedDays = new Map(
+      allowedDays.map(day => [day.toLowerCase(), day])
+    );
+
+    const prepared = [];
+    const errors = [];
+
+    for (const row of rows) {
+      const guruId = row.guruId;
+      const hari = normalizedDays.get(row.hari.toLowerCase());
+      const kelas = row.kelas;
+      const jamKe = Number(row.jamKe);
+      const jamMulai = row.jamMulai;
+      const jamSelesai = row.jamSelesai;
+
+      const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+      if (!guruId || !teachers.has(guruId)) {
+        errors.push(`Baris ${row._baris}: UID guru tidak ditemukan atau guru tidak aktif.`);
+        continue;
+      }
+
+      if (!hari || !kelas) {
+        errors.push(`Baris ${row._baris}: hari atau kelas tidak valid.`);
+        continue;
+      }
+
+      if (!Number.isInteger(jamKe) || jamKe < 1) {
+        errors.push(`Baris ${row._baris}: jamKe harus berupa bilangan bulat minimal 1.`);
+        continue;
+      }
+
+      if (
+        !timePattern.test(jamMulai) ||
+        !timePattern.test(jamSelesai) ||
+        jamSelesai <= jamMulai
+      ) {
+        errors.push(`Baris ${row._baris}: format waktu tidak valid.`);
+        continue;
+      }
+
+      const teacher = teachers.get(guruId);
+      const key = [
+        guruId,
+        hari.toLowerCase(),
+        kelas.toLowerCase(),
+        jamKe
+      ].join("|");
+
+      prepared.push({
+        key,
+        guruId,
+        guruNama: teacher.nama || "",
+        hari,
+        kelas,
+        jamKe,
+        jamMulai,
+        jamSelesai
+      });
+    }
+
+    if (errors.length) {
+      message.textContent =
+        `Import dibatalkan karena ditemukan ${errors.length} kesalahan:\n` +
+        errors.slice(0, 10).join("\n") +
+        (errors.length > 10 ? "\nDan kesalahan lainnya." : "");
+      return;
+    }
+
+    // Jika satu file berisi kunci jadwal yang sama lebih dari sekali,
+    // import ditolak agar hasilnya tidak ambigu.
+    const importedKeys = new Set();
+
+    for (const item of prepared) {
+      if (importedKeys.has(item.key)) {
+        throw new Error(
+          `Ada jadwal ganda di file untuk ${item.guruNama}, ` +
+          `${item.hari}, ${item.kelas}, jam ke-${item.jamKe}.`
+        );
+      }
+      importedKeys.add(item.key);
+    }
+
+    if (!prepared.length) {
+      throw new Error("Tidak ada baris jadwal yang dapat diimport.");
+    }
+
+    if (!confirm(
+      `Import ${prepared.length} baris jadwal?\n` +
+      "Jadwal dengan guru, hari, kelas, dan jam pelajaran yang sama " +
+      "akan diperbarui, bukan ditambahkan sebagai duplikat."
+    )) {
+      message.textContent = "Import dibatalkan.";
+      return;
+    }
+
+    // Firestore membatasi satu batch sampai 500 operasi.
+    // Gunakan batch berisi maksimal 400 operasi.
+    let importedCount = 0;
+
+    for (let start = 0; start < prepared.length; start += 400) {
+      await verifyActiveAdmin();
+
+      const chunk = prepared.slice(start, start + 400);
+      const batch = writeBatch(db);
+
+      for (const item of chunk) {
+        let scheduleId = existing.get(item.key);
+
+        if (!scheduleId) {
+          // ID otomatis dibuat satu kali dan dipertahankan
+          // agar import berikutnya bisa memperbarui jadwal ini.
+          scheduleId = doc(collection(db, "jadwal")).id;
+          existing.set(item.key, scheduleId);
+        }
+
+        const ref = doc(db, "jadwal", scheduleId);
+
+        batch.set(ref, {
+          guruId: item.guruId,
+          guruNama: item.guruNama,
+          hari: item.hari,
+          kelas: item.kelas,
+          jamKe: item.jamKe,
+          jamMulai: item.jamMulai,
+          jamSelesai: item.jamSelesai,
+          aktif: true,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+
+      await batch.commit();
+      importedCount += chunk.length;
+    }
+
+    message.textContent =
+      `Berhasil mengimport ${importedCount} jadwal.`;
+
+    $("scheduleCsvFile").value = "";
+    await loadSchedules();
+
+  } catch (error) {
+    console.error("Import jadwal gagal:", error);
+    message.textContent =
+      "Import gagal: " + (error.message || "Kesalahan tidak diketahui.");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+    //-----
     
     
   </script>
