@@ -177,6 +177,82 @@
         diaktifkan secara bertahap.
       </p>
     </section>
+ <!-- Tahap4 -->
+    
+<!-- HALAMAN KELOLA SISWA -->
+<section id="studentsPage" class="card hidden">
+  <h2>Pengelolaan Data Siswa</h2>
+  <p class="muted">
+    Tambah, edit, hapus, cari, atau impor data siswa.
+  </p>
+
+  <button id="backDashboardButton" class="secondary">
+    Kembali ke Dashboard
+  </button>
+
+  <hr>
+
+  <h3>Tambah Siswa</h3>
+  <form id="studentForm">
+    <label for="studentName">Nama siswa</label>
+    <input id="studentName" required>
+
+    <label for="studentNisn">NISN</label>
+    <input id="studentNisn" inputmode="numeric"
+           maxlength="20" required>
+
+    <label for="studentClass">Kelas</label>
+    <input id="studentClass" placeholder="Contoh: XII-1" required>
+
+    <button class="primary full" type="submit">
+      Simpan Siswa
+    </button>
+    <button class="secondary full hidden" id="cancelEditButton"
+            type="button">
+      Batal Edit
+    </button>
+  </form>
+
+  <hr>
+
+  <h3>Import CSV</h3>
+  <p class="muted">
+    Header wajib: nama, nisn, kelas.
+  </p>
+  <input id="csvFile" type="file" accept=".csv,text/csv">
+  <button id="importCsvButton" class="primary full" type="button">
+    Import Data CSV
+  </button>
+  <p id="importStatus" class="muted" role="status"></p>
+
+  <hr>
+
+  <h3>Daftar Siswa</h3>
+  <label for="studentSearch">Cari siswa</label>
+  <input id="studentSearch"
+         placeholder="Nama, NISN, atau kelas">
+
+  <p id="studentCount" class="muted"></p>
+
+  <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px">Nama</th>
+          <th style="text-align:left;padding:8px">NISN</th>
+          <th style="text-align:left;padding:8px">Kelas</th>
+          <th style="text-align:left;padding:8px">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="studentTableBody"></tbody>
+    </table>
+  </div>
+  <p id="studentMessage" class="muted"></p>
+</section>
+
+
+     <!--  -->
+    
 
     <!-- STATUS ERROR AKUN -->
     <section id="errorPage" class="card hidden">
@@ -203,10 +279,16 @@
     } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 
     import {
-      getFirestore,
-      doc,
-      getDoc
-    } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+  getFirestore,
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  writeBatch
+} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
     // GANTI DENGAN KONFIGURASI DARI FIREBASE CONSOLE
     const firebaseConfig = {
@@ -223,8 +305,12 @@
     const db = getFirestore(app);
 
     const pages = [
-      "homePage", "loginPage", "dashboardPage", "errorPage"
-    ];
+  "homePage",
+  "loginPage",
+  "dashboardPage",
+  "studentsPage",
+  "errorPage"
+];
 
     const $ = id => document.getElementById(id);
 
@@ -289,6 +375,20 @@
           menuItem("Data Siswa", "Import dan kelola data siswa."),
           menuItem("Data Pengguna", "Kelola akun guru dan kepala sekolah."),
           menuItem("Jadwal Mengajar", "Atur jadwal guru, kelas, dan jam pelajaran.")
+
+          //menu tahap 4
+          const manageStudentsButton = document.createElement("button");
+           manageStudentsButton.className = "primary";
+           manageStudentsButton.textContent = "Kelola Data Siswa";
+
+           manageStudentsButton.addEventListener("click", () => {
+           showPage("studentsPage");
+           loadStudents();
+         });
+
+roleMenu.append(manageStudentsButton);
+
+          //------------
         );
       } else if (role === "kepsek") {
         $("dashboardTitle").textContent = "Dashboard Kepala Sekolah";
@@ -313,6 +413,333 @@
       $("loginButton").classList.add("hidden");
       $("logoutButton").classList.remove("hidden");
     }
+
+    //logika CRUD dan import CSV
+    
+let studentsCache = [];
+let editingNisn = null;
+
+function showStudentMessage(message) {
+  $("studentMessage").textContent = message;
+}
+
+function resetStudentForm() {
+  editingNisn = null;
+  $("studentForm").reset();
+  $("studentNisn").disabled = false;
+  $("cancelEditButton").classList.add("hidden");
+}
+
+async function loadStudents() {
+  const body = $("studentTableBody");
+  body.replaceChildren();
+  $("studentCount").textContent = "Memuat data siswa...";
+  showStudentMessage("");
+
+  try {
+    const snapshot = await getDocs(collection(db, "siswa"));
+
+    studentsCache = snapshot.docs.map(item => ({
+      id: item.id,
+      ...item.data()
+    }));
+
+    studentsCache.sort((a, b) =>
+      String(a.nama || "").localeCompare(String(b.nama || ""), "id")
+    );
+
+    renderStudents();
+  } catch (error) {
+    console.error("Gagal membaca siswa:", error);
+    $("studentCount").textContent = "Data gagal dimuat.";
+    showStudentMessage(
+      "Periksa login admin, Firestore Rules, dan koneksi internet."
+    );
+  }
+}
+
+function renderStudents() {
+  const body = $("studentTableBody");
+  body.replaceChildren();
+
+  const keyword = $("studentSearch").value.trim().toLowerCase();
+
+  const filtered = studentsCache.filter(s => {
+    const text = `${s.nama || ""} ${s.nisn || ""} ${s.kelas || ""}`;
+    return text.toLowerCase().includes(keyword);
+  });
+
+  $("studentCount").textContent =
+    `${filtered.length} siswa ditampilkan dari ${studentsCache.length} data.`;
+
+  for (const student of filtered) {
+    const tr = document.createElement("tr");
+
+    for (const value of [
+      student.nama || "",
+      student.nisn || student.id,
+      student.kelas || ""
+    ]) {
+      const td = document.createElement("td");
+      td.style.padding = "8px";
+      td.style.borderBottom = "1px solid #e2e8f0";
+      td.textContent = value;
+      tr.append(td);
+    }
+
+    const actionCell = document.createElement("td");
+    actionCell.style.padding = "8px";
+    actionCell.style.borderBottom = "1px solid #e2e8f0";
+
+    const editButton = document.createElement("button");
+    editButton.className = "secondary";
+    editButton.textContent = "Edit";
+    editButton.style.margin = "3px";
+
+    editButton.addEventListener("click", () => {
+      editingNisn = student.id;
+      $("studentName").value = student.nama || "";
+      $("studentNisn").value = student.nisn || student.id;
+      $("studentClass").value = student.kelas || "";
+      $("studentNisn").disabled = true;
+      $("cancelEditButton").classList.remove("hidden");
+      $("studentName").focus();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "danger";
+    deleteButton.textContent = "Hapus";
+    deleteButton.style.margin = "3px";
+
+    deleteButton.addEventListener("click", async () => {
+      const confirmed = confirm(
+        `Hapus data siswa ${student.nama || student.id}?`
+      );
+
+      if (!confirmed) return;
+
+      try {
+        await deleteDoc(doc(db, "siswa", student.id));
+        await loadStudents();
+        showStudentMessage("Data siswa berhasil dihapus.");
+      } catch (error) {
+        console.error(error);
+        showStudentMessage(
+          "Gagal menghapus data. Periksa hak akses admin."
+        );
+      }
+    });
+
+    actionCell.append(editButton, deleteButton);
+    tr.append(actionCell);
+    body.append(tr);
+  }
+}
+
+$("studentSearch").addEventListener("input", renderStudents);
+
+$("backDashboardButton").addEventListener("click", () => {
+  showPage("dashboardPage");
+});
+
+$("cancelEditButton").addEventListener("click", resetStudentForm);
+
+$("studentForm").addEventListener("submit", async event => {
+  event.preventDefault();
+
+  const nama = $("studentName").value.trim();
+  const nisn = $("studentNisn").value.trim();
+  const kelas = $("studentClass").value.trim();
+
+  if (!nama || !nisn || !kelas) {
+    showStudentMessage("Nama, NISN, dan kelas wajib diisi.");
+    return;
+  }
+
+  const saveButton = $("studentForm").querySelector(
+    'button[type="submit"]'
+  );
+
+  saveButton.disabled = true;
+
+  try {
+    const id = editingNisn || nisn;
+    const studentRef = doc(db, "siswa", id);
+    const existing = await getDoc(studentRef);
+
+    const payload = {
+      nama,
+      nisn: editingNisn ? (studentsCache.find(s => s.id === id)?.nisn || id) : nisn,
+      kelas,
+      aktif: existing.exists()
+        ? existing.data().aktif !== false
+        : true
+    };
+
+    if (!existing.exists()) {
+      payload.createdAt = serverTimestamp();
+    }
+
+    await setDoc(studentRef, payload, { merge: true });
+
+    resetStudentForm();
+    await loadStudents();
+    showStudentMessage(
+      editingNisn
+        ? "Data siswa berhasil diperbarui."
+        : "Data siswa berhasil disimpan."
+    );
+  } catch (error) {
+    console.error("Gagal menyimpan siswa:", error);
+    showStudentMessage(
+      "Gagal menyimpan. Periksa Firestore Rules dan pastikan akun Anda admin."
+    );
+  } finally {
+    saveButton.disabled = false;
+  }
+});
+
+// Parser CSV yang mendukung tanda kutip dan koma di dalam kolom.
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+
+  text = text.replace(/^\uFEFF/, "");
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+
+    if (c === '"') {
+      if (quoted && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (c === "," && !quoted) {
+      row.push(field.trim());
+      field = "";
+    } else if ((c === "\n" || c === "\r") && !quoted) {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field.trim());
+
+      if (row.some(value => value !== "")) rows.push(row);
+
+      row = [];
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+
+  if (quoted) throw new Error("CSV memiliki tanda kutip yang tidak berpasangan.");
+
+  if (field !== "" || row.length) {
+    row.push(field.trim());
+    if (row.some(value => value !== "")) rows.push(row);
+  }
+
+  return rows;
+}
+
+$("importCsvButton").addEventListener("click", async () => {
+  const file = $("csvFile").files[0];
+
+  if (!file) {
+    $("importStatus").textContent = "Pilih file CSV terlebih dahulu.";
+    return;
+  }
+
+  const button = $("importCsvButton");
+  button.disabled = true;
+  $("importStatus").textContent = "Membaca file CSV...";
+
+  try {
+    const rows = parseCSV(await file.text());
+
+    if (rows.length < 2) {
+      throw new Error("CSV tidak berisi data siswa.");
+    }
+
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const nameIndex = headers.indexOf("nama");
+    const nisnIndex = headers.indexOf("nisn");
+    const classIndex = headers.indexOf("kelas");
+
+    if ([nameIndex, nisnIndex, classIndex].some(i => i < 0)) {
+      throw new Error("Header wajib: nama, nisn, kelas.");
+    }
+
+    const imported = new Map();
+
+    for (let i = 1; i < rows.length; i++) {
+      const cells = rows[i];
+      const nama = (cells[nameIndex] || "").trim();
+      const nisn = (cells[nisnIndex] || "").trim();
+      const kelas = (cells[classIndex] || "").trim();
+
+      if (!nama && !nisn && !kelas) continue;
+
+      if (!nama || !nisn || !kelas) {
+        throw new Error(`Baris ${i + 1}: nama, NISN, atau kelas kosong.`);
+      }
+
+      // Mencegah duplikasi NISN dalam satu file.
+      if (imported.has(nisn)) {
+        throw new Error(`NISN duplikat pada file: ${nisn}`);
+      }
+
+      imported.set(nisn, { nama, nisn, kelas });
+    }
+
+    const records = [...imported.values()];
+
+    if (!records.length) {
+      throw new Error("Tidak ada baris data yang valid.");
+    }
+
+    let success = 0;
+
+    // Maksimal 450 operasi per batch, di bawah batas Firestore 500.
+    for (let start = 0; start < records.length; start += 450) {
+      const chunk = records.slice(start, start + 450);
+      const batch = writeBatch(db);
+
+      for (const student of chunk) {
+        const ref = doc(db, "siswa", student.nisn);
+
+        batch.set(ref, {
+          ...student,
+          aktif: true,
+          importedAt: serverTimestamp()
+        }, { merge: true });
+      }
+
+      await batch.commit();
+      success += chunk.length;
+
+      $("importStatus").textContent =
+        `Berhasil menyimpan ${success} dari ${records.length} siswa...`;
+    }
+
+    await loadStudents();
+    $("importStatus").textContent =
+      `Import selesai: ${success} siswa berhasil disimpan.`;
+    $("csvFile").value = "";
+  } catch (error) {
+    console.error("Import CSV gagal:", error);
+    $("importStatus").textContent = `Import gagal: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+
+    
+    //---------------------------
 
     async function loadUserProfile(user) {
       try {
