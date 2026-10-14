@@ -359,8 +359,95 @@
 </section>
 
 
+    <!-- halaman Kelola Jadwal -->
+
+<!-- HALAMAN KELOLA JADWAL -->
+<section id="schedulePage" class="card hidden">
+  <h2>Kelola Jadwal Mengajar</h2>
+  <p>Tambah atau ubah jadwal mengajar guru.</p>
+
+  <form id="scheduleForm">
+    <input type="hidden" id="scheduleId">
+
+    <label for="scheduleTeacher">Nama Guru</label>
+    <select id="scheduleTeacher" required>
+      <option value="">Memuat daftar guru...</option>
+    </select>
+
+    <label for="scheduleDay">Hari</label>
+    <select id="scheduleDay" required>
+      <option value="">Pilih hari</option>
+      <option>Senin</option>
+      <option>Selasa</option>
+      <option>Rabu</option>
+      <option>Kamis</option>
+      <option>Jumat</option>
+      <option>Sabtu</option>
+    </select>
+
+    <label for="scheduleClass">Kelas</label>
+    <input id="scheduleClass" placeholder="Contoh: XII IPA 1" required>
+
+    <label for="schedulePeriod">Jam Pelajaran Ke</label>
+    <input id="schedulePeriod" type="number" min="1"
+           placeholder="Contoh: 1" required>
+
+    <label for="scheduleStart">Jam Mulai</label>
+    <input id="scheduleStart" type="time" required>
+
+    <label for="scheduleEnd">Jam Selesai</label>
+    <input id="scheduleEnd" type="time" required>
+
+    <div style="margin-top:12px">
+      <button id="saveScheduleButton" class="primary" type="submit">
+        Simpan Jadwal
+      </button>
+      <button id="cancelScheduleEdit" class="secondary"
+              type="button" hidden>
+        Batal Edit
+      </button>
+    </div>
+  </form>
+
+  <p id="scheduleMessage" role="status"></p>
+
+  <hr>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button id="refreshSchedules" class="secondary" type="button">
+      Muat Ulang Jadwal
+    </button>
+    <button id="backScheduleDashboard" class="secondary" type="button">
+      Kembali ke Dashboard
+    </button>
+  </div>
+
+  <div style="overflow-x:auto;margin-top:16px">
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th>Guru</th>
+          <th>Hari</th>
+          <th>Kelas</th>
+          <th>Jam Ke</th>
+          <th>Waktu</th>
+          <th>Status</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="scheduleTableBody">
+        <tr>
+          <td colspan="7">Jadwal belum dimuat.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
     
-    ==========
+    <!--  -->
+    
 
     <!-- STATUS ERROR AKUN -->
     <section id="errorPage" class="card hidden">
@@ -418,6 +505,7 @@
   "dashboardPage",
   "studentsPage",
   "usersPage",
+  "schedulePage",
   "errorPage"
 ];
 
@@ -515,9 +603,23 @@ manageUsersButton.addEventListener("click", async () => {
 
 roleMenu.append(manageUsersButton);
 
+    //--------
+
+        //Penambahan tombol kelola Jadwal
+const manageSchedulesButton = document.createElement("button");
+manageSchedulesButton.className = "primary";
+manageSchedulesButton.textContent = "Kelola Jadwal Mengajar";
+
+manageSchedulesButton.addEventListener("click", async () => {
+  showPage("schedulePage");
+  await loadScheduleTeachers();
+  await loadSchedules();
+});
+
+roleMenu.append(manageSchedulesButton);
 
 
-        //--------
+        //------
 
         
       } else if (role === "kepsek") {
@@ -1297,6 +1399,354 @@ $("managedUserForm").addEventListener("submit", async event => {
 
 
     //-----
+
+//tahap 6 kelola jadwal
+
+/* =====================================================
+   TAHAP 6 - KELOLA JADWAL MENGAJAR
+   ===================================================== */
+
+let editingScheduleId = null;
+
+function showScheduleMessage(message) {
+  $("scheduleMessage").textContent = message;
+}
+
+function resetScheduleForm() {
+  editingScheduleId = null;
+  $("scheduleForm").reset();
+  $("scheduleId").value = "";
+  $("scheduleTeacher").disabled = false;
+  $("saveScheduleButton").textContent = "Simpan Jadwal";
+  $("cancelScheduleEdit").hidden = true;
+}
+
+async function verifyActiveAdmin() {
+  if (!auth.currentUser) {
+    throw new Error("Silakan login kembali.");
+  }
+
+  const snapshot = await getDoc(
+    doc(db, "users", auth.currentUser.uid)
+  );
+
+  if (
+    !snapshot.exists() ||
+    snapshot.data().role !== "admin" ||
+    snapshot.data().aktif !== true
+  ) {
+    throw new Error("Fitur ini hanya untuk admin aktif.");
+  }
+
+  return snapshot.data();
+}
+
+// Memuat daftar guru aktif ke dalam pilihan form.
+async function loadScheduleTeachers() {
+  const select = $("scheduleTeacher");
+  select.replaceChildren();
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Pilih guru";
+  select.appendChild(placeholder);
+
+  try {
+    await verifyActiveAdmin();
+
+    const snapshot = await getDocs(collection(db, "users"));
+
+    const teachers = snapshot.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .filter(user =>
+        user.role === "guru" && user.aktif === true
+      )
+      .sort((a, b) =>
+        String(a.nama || "").localeCompare(
+          String(b.nama || ""), "id"
+        )
+      );
+
+    for (const teacher of teachers) {
+      const option = document.createElement("option");
+      option.value = teacher.id;
+      option.textContent =
+        `${teacher.nama || "(Tanpa nama)"} — ${teacher.nip || teacher.email || teacher.id}`;
+      select.appendChild(option);
+    }
+
+    if (teachers.length === 0) {
+      showScheduleMessage(
+        "Belum ada guru aktif. Buat akun Authentication dan profil guru terlebih dahulu."
+      );
+    }
+  } catch (error) {
+    console.error("Gagal memuat guru:", error);
+    showScheduleMessage(
+      error.message || "Gagal memuat daftar guru."
+    );
+  }
+}
+
+// Memuat semua jadwal.
+async function loadSchedules() {
+  const body = $("scheduleTableBody");
+  body.replaceChildren();
+
+  const loadingRow = document.createElement("tr");
+  const loadingCell = document.createElement("td");
+  loadingCell.colSpan = 7;
+  loadingCell.textContent = "Memuat jadwal...";
+  loadingRow.appendChild(loadingCell);
+  body.appendChild(loadingRow);
+
+  try {
+    await verifyActiveAdmin();
+
+    const snapshot = await getDocs(collection(db, "jadwal"));
+
+    const schedules = snapshot.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .sort((a, b) =>
+        String(a.hari || "").localeCompare(String(b.hari || ""), "id") ||
+        String(a.kelas || "").localeCompare(String(b.kelas || ""), "id") ||
+        Number(a.jamKe || 0) - Number(b.jamKe || 0)
+      );
+
+    body.replaceChildren();
+
+    if (schedules.length === 0) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 7;
+      cell.textContent = "Belum ada jadwal mengajar.";
+      row.appendChild(cell);
+      body.appendChild(row);
+      return;
+    }
+
+    for (const schedule of schedules) {
+      const row = document.createElement("tr");
+
+      const values = [
+        schedule.guruNama || "-",
+        schedule.hari || "-",
+        schedule.kelas || "-",
+        schedule.jamKe ?? "-",
+        `${schedule.jamMulai || "-"}–${schedule.jamSelesai || "-"}`,
+        schedule.aktif === true ? "Aktif" : "Nonaktif"
+      ];
+
+      for (const value of values) {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        cell.style.padding = "8px";
+        cell.style.borderBottom = "1px solid #e2e8f0";
+        row.appendChild(cell);
+      }
+
+      const actionCell = document.createElement("td");
+      actionCell.style.padding = "8px";
+
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "secondary";
+      editButton.textContent = "Edit";
+      editButton.style.margin = "3px";
+
+      editButton.addEventListener("click", async () => {
+        try {
+          // Pastikan daftar guru sudah tersedia.
+          if ($("scheduleTeacher").options.length <= 1) {
+            await loadScheduleTeachers();
+          }
+
+          editingScheduleId = schedule.id;
+          $("scheduleId").value = schedule.id;
+          $("scheduleTeacher").value = schedule.guruId || "";
+          $("scheduleDay").value = schedule.hari || "";
+          $("scheduleClass").value = schedule.kelas || "";
+          $("schedulePeriod").value = schedule.jamKe ?? "";
+          $("scheduleStart").value = schedule.jamMulai || "";
+          $("scheduleEnd").value = schedule.jamSelesai || "";
+
+          $("scheduleTeacher").disabled = false;
+          $("saveScheduleButton").textContent = "Simpan Perubahan";
+          $("cancelScheduleEdit").hidden = false;
+
+          showScheduleMessage(
+            "Mode edit: periksa data, lalu simpan perubahan."
+          );
+
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch (error) {
+          showScheduleMessage(error.message);
+        }
+      });
+
+      const statusButton = document.createElement("button");
+      statusButton.type = "button";
+      statusButton.className =
+        schedule.aktif === true ? "danger" : "primary";
+      statusButton.textContent =
+        schedule.aktif === true ? "Nonaktifkan" : "Aktifkan";
+      statusButton.style.margin = "3px";
+
+      statusButton.addEventListener("click", async () => {
+        const newStatus = schedule.aktif !== true;
+
+        if (!confirm(
+          `${newStatus ? "Aktifkan" : "Nonaktifkan"} jadwal ` +
+          `${schedule.guruNama || ""}, ${schedule.kelas || ""}, ` +
+          `${schedule.hari || ""}?`
+        )) return;
+
+        try {
+          await verifyActiveAdmin();
+
+          await setDoc(
+            doc(db, "jadwal", schedule.id),
+            { aktif: newStatus },
+            { merge: true }
+          );
+
+          showScheduleMessage("Status jadwal berhasil diperbarui.");
+          await loadSchedules();
+        } catch (error) {
+          console.error("Gagal mengubah status jadwal:", error);
+          showScheduleMessage(
+            error.message || "Gagal mengubah status jadwal."
+          );
+        }
+      });
+
+      actionCell.append(editButton, statusButton);
+      row.appendChild(actionCell);
+      body.appendChild(row);
+    }
+  } catch (error) {
+    console.error("Gagal memuat jadwal:", error);
+    body.replaceChildren();
+
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.textContent =
+      error.message || "Gagal memuat jadwal. Periksa Firestore Rules.";
+    row.appendChild(cell);
+    body.appendChild(row);
+
+    showScheduleMessage(cell.textContent);
+  }
+}
+
+// Simpan jadwal baru atau perubahan jadwal.
+$("scheduleForm").addEventListener("submit", async event => {
+  event.preventDefault();
+
+  const guruId = $("scheduleTeacher").value;
+  const hari = $("scheduleDay").value;
+  const kelas = $("scheduleClass").value.trim();
+  const jamKe = Number($("schedulePeriod").value);
+  const jamMulai = $("scheduleStart").value;
+  const jamSelesai = $("scheduleEnd").value;
+
+  if (!guruId || !hari || !kelas || !jamMulai || !jamSelesai) {
+    showScheduleMessage("Semua kolom wajib diisi.");
+    return;
+  }
+
+  if (!Number.isInteger(jamKe) || jamKe < 1) {
+    showScheduleMessage("Jam pelajaran harus berupa angka minimal 1.");
+    return;
+  }
+
+  if (jamSelesai <= jamMulai) {
+    showScheduleMessage("Jam selesai harus setelah jam mulai.");
+    return;
+  }
+
+  const button = $("saveScheduleButton");
+  button.disabled = true;
+
+  try {
+    await verifyActiveAdmin();
+
+    // Ambil profil guru langsung dari Firestore.
+    const teacherSnapshot = await getDoc(doc(db, "users", guruId));
+
+    if (
+      !teacherSnapshot.exists() ||
+      teacherSnapshot.data().role !== "guru" ||
+      teacherSnapshot.data().aktif !== true
+    ) {
+      throw new Error("Guru tidak ditemukan atau tidak aktif.");
+    }
+
+    const teacher = teacherSnapshot.data();
+
+    const scheduleData = {
+      guruId,
+      guruNama: teacher.nama || "",
+      hari,
+      kelas,
+      jamKe,
+      jamMulai,
+      jamSelesai,
+      aktif: true,
+      updatedAt: serverTimestamp()
+    };
+
+    if (editingScheduleId) {
+      // Update dokumen yang sama, tidak membuat duplikat.
+      await setDoc(
+        doc(db, "jadwal", editingScheduleId),
+        scheduleData,
+        { merge: true }
+      );
+      showScheduleMessage("Jadwal berhasil diperbarui.");
+    } else {
+      // Buat dokumen dengan ID otomatis.
+      const newScheduleRef = doc(collection(db, "jadwal"));
+
+      await setDoc(newScheduleRef, {
+        ...scheduleData,
+        createdAt: serverTimestamp()
+      });
+
+      showScheduleMessage("Jadwal berhasil ditambahkan.");
+    }
+
+    resetScheduleForm();
+    await loadSchedules();
+  } catch (error) {
+    console.error("Gagal menyimpan jadwal:", error);
+    showScheduleMessage(
+      error.message || "Jadwal gagal disimpan. Periksa Firestore Rules."
+    );
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("cancelScheduleEdit").addEventListener("click", () => {
+  resetScheduleForm();
+  showScheduleMessage("Edit dibatalkan.");
+});
+
+$("refreshSchedules").addEventListener("click", async () => {
+  await loadScheduleTeachers();
+  await loadSchedules();
+});
+
+$("backScheduleDashboard").addEventListener("click", () => {
+  resetScheduleForm();
+  showPage("dashboardPage");
+});
+
+
+    //-------
+    
     
   </script>
 </body>
